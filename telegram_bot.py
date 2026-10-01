@@ -226,31 +226,74 @@ async def handle_article_input(message: types.Message, state: FSMContext):
 
     query_lower = query.lower()
 
-    # 1. Точный поиск по артикулу
+# 1. Точный поиск по артикулу
     exact_match = next((row for row in all_parts if row[0].lower() == query_lower), None)
 
     if exact_match:
+        # Показываем карточку товара (как раньше)
         status_emoji = {"available": "🟢 Свободна", "sold": "🔴 Продана", "paid": "🟡 Оплачена", "shipped": "📦 Отгружена"}.get(exact_match[7], "❓ Неизвестно")
         
         text = (f"📦 <code>{exact_match[0]}</code>\n"
                 f"📝 {exact_match[1]}\n"
-                f"🚗 {exact_match[3]} {exact_match[2]}\n"
+                f" {exact_match[3]} {exact_match[2]}\n"
                 f"💰 <b>{exact_match[4] or '?'} ₽</b>\n"
                 f"📍 {exact_match[6] or 'Не указана'}\n"
                 f"📊 Статус: {status_emoji}")
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Продать", callback_data=f"sell_{exact_match[0]}"),
-             InlineKeyboardButton(text="💰 Оплачено", callback_data=f"paid_{exact_match[0]}")],
+            InlineKeyboardButton(text="💰 Оплачено", callback_data=f"paid_{exact_match[0]}")],
             [InlineKeyboardButton(text="📦 Отгрузить", callback_data=f"ship_{exact_match[0]}"),
-             InlineKeyboardButton(text="🔄 Вернуть в продажу", callback_data=f"available_{exact_match[0]}")],
-            [InlineKeyboardButton(text="💰 Оформить продажу", callback_data=f"start_sale_{exact_match[0]}")]
+            InlineKeyboardButton(text="🔄 Вернуть в продажу", callback_data=f"available_{exact_match[0]}")],
+            [InlineKeyboardButton(text=" Оформить продажу", callback_data=f"start_sale_{exact_match[0]}")]
         ])
         
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
-    # 2. Поиск по словам в названии
+    # 2. Частичный поиск по артикулу (если точного совпадения нет)
+    partial_matches = [row for row in all_parts if row[0].lower().startswith(query_lower)]
+
+    if partial_matches:
+        # Если найдено несколько вариантов — показываем список
+        if len(partial_matches) == 1:
+            # Если только один — показываем карточку
+            row = partial_matches[0]
+            status_emoji = {"available": "🟢 Свободна", "sold": "🔴 Продана", "paid": "🟡 Оплачена", "shipped": "📦 Отгружена"}.get(row[7], "❓ Неизвестно")
+            
+            text = (f"📦 <code>{row[0]}</code>\n"
+                    f" {row[1]}\n"
+                    f"🚗 {row[3]} {row[2]}\n"
+                    f" <b>{row[4] or '?'} ₽</b>\n"
+                    f"📍 {row[6] or 'Не указана'}\n"
+                    f"📊 Статус: {status_emoji}\n\n"
+                    f"🔍 Найдено по частичному совпадению артикула")
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Продать", callback_data=f"sell_{row[0]}"),
+                InlineKeyboardButton(text="💰 Оплачено", callback_data=f"paid_{row[0]}")],
+                [InlineKeyboardButton(text="📦 Отгрузить", callback_data=f"ship_{row[0]}"),
+                InlineKeyboardButton(text="🔄 Вернуть в продажу", callback_data=f"available_{row[0]}")],
+                [InlineKeyboardButton(text="💰 Оформить продажу", callback_data=f"start_sale_{row[0]}")]
+            ])
+            
+            await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            # Если несколько — показываем список
+            text = f"🔍 <b>Найдено {len(partial_matches)} вариантов по артикулу:</b>\n\n"
+            keyboard_buttons = []
+            
+            for row in partial_matches[:10]:  # Максимум 10 результатов
+                status_emoji = {"available": "🟢", "sold": "", "paid": "🟡", "shipped": "📦"}.get(row[7], "❓")
+                button_text = f"{status_emoji} {row[0]} — {row[1][:30]}"
+                keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data=f"detail_{row[0]}")])
+                text += f"{status_emoji} <code>{row[0]}</code> — {row[1][:40]} ({row[4] or '?'} ₽)\n"
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+            await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # 3. Поиск по словам в названии (если по артикулу не нашли)
     if len(query) > 3:
         words = [w for w in query_lower.split() if len(w) > 2]
         results = []
@@ -261,29 +304,28 @@ async def handle_article_input(message: types.Message, state: FSMContext):
 
         if len(results) == 1:
             row = results[0]
-            status_emoji = {"available": "🟢 Свободна", "sold": "🔴 Продана", "paid": "🟡 Оплачена", "shipped": "📦 Отгружена"}.get(row[7], "❓ Неизвестно")
+            status_emoji = {"available": " Свободна", "sold": "🔴 Продана", "paid": " Оплачена", "shipped": " Отгружена"}.get(row[7], "❓ Неизвестно")
             
             text = (f"📦 <code>{row[0]}</code>\n"
-                    f" {row[1]}\n"
-                    f"🚗 {row[3]} {row[2]}\n"
+                    f"📝 {row[1]}\n"
+                    f" {row[3]} {row[2]}\n"
                     f"💰 <b>{row[4] or '?'} ₽</b>\n"
                     f"📍 {row[6] or 'Не указана'}\n"
                     f"📊 Статус: {status_emoji}")
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Продать", callback_data=f"sell_{row[0]}"),
-                 InlineKeyboardButton(text="💰 Оплачено", callback_data=f"paid_{row[0]}")],
+                InlineKeyboardButton(text="💰 Оплачено", callback_data=f"paid_{row[0]}")],
                 [InlineKeyboardButton(text="📦 Отгрузить", callback_data=f"ship_{row[0]}"),
-                 InlineKeyboardButton(text="🔄 Вернуть в продажу", callback_data=f"available_{row[0]}")]
+                InlineKeyboardButton(text="🔄 Вернуть в продажу", callback_data=f"available_{row[0]}")]
             ])
             
             await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         elif len(results) > 1:
-            text = f"🔍 <b>Найдено {len(results)} вариантов:</b>\n\n"
+            text = f"🔍 <b>Найдено {len(results)} вариантов по названию:</b>\n\n"
             
-            # Создаем inline-кнопки для каждого результата
             keyboard_buttons = []
-            for row in results[:10]:  # Максимум 10 результатов
+            for row in results[:10]:
                 status_emoji = {"available": "🟢", "sold": "🔴", "paid": "", "shipped": "📦"}.get(row[7], "❓")
                 button_text = f"{status_emoji} {row[0]} — {row[1][:40]}"
                 keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data=f"detail_{row[0]}")])
@@ -295,7 +337,6 @@ async def handle_article_input(message: types.Message, state: FSMContext):
             await message.answer(f"❌ Не найдено: <code>{query}</code>", parse_mode="HTML")
     else:
         await message.answer(f"❌ Не найдено: <code>{query}</code>", parse_mode="HTML")
-
 
 @dp.callback_query(lambda c: c.data and c.data.startswith(('sell_', 'paid_', 'ship_', 'available_')))
 async def handle_status_change(callback_query: types.CallbackQuery):
