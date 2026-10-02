@@ -156,12 +156,6 @@ async def cmd_reply(message: types.Message):
     except ValueError:
         await message.answer("❌ ID должен быть числом")
         
-@dp.message(Command("export_to_sheet"))
-async def cmd_export_to_sheet(message: types.Message):
-    await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
-    report = sheets_sync.export_db_to_sheet()
-    await message.answer(report)
-
 @dp.message(Command("sync"))
 async def cmd_sync(message: types.Message):
     try:
@@ -175,6 +169,12 @@ async def cmd_sync(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Ошибка при синхронизации:\n<code>{e}</code>")
         print(f"🔥 Ошибка в коде синхронизации: {e}")
+
+@dp.message(Command("export_to_sheet"))
+async def cmd_export_to_sheet(message: types.Message):
+    await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
+    report = sheets_sync.export_db_to_sheet()
+    await message.answer(report)
 
 @dp.message(Command("test_message"))
 async def cmd_test_message(message: types.Message):
