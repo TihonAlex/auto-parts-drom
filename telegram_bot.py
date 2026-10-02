@@ -155,6 +155,7 @@ async def cmd_reply(message: types.Message):
         conn.close()
     except ValueError:
         await message.answer("❌ ID должен быть числом")
+        
 @dp.message(Command("export_to_sheet"))
 async def cmd_export_to_sheet(message: types.Message):
     await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
