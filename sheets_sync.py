@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 
 # ВСТАВЬ СЮДА ID СВОЕЙ РАБОЧЕЙ GOOGLE ТАБЛИЦЫ (из адресной строки)
-SHEET_ID = '1Z1Td434s7Y4LnGwACfccrDhPcIqTS7sWSvO_UQJMDBA' 
+SHEET_ID = '1YybdZWWlKPUZMqrlMVsh0CAxKs-5WhVn2HYE7que1SM' 
 
 # Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
 CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
