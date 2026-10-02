@@ -1,11 +1,15 @@
+import os
+import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import sqlite3
 from datetime import datetime
 
-# ВСТАВЬ СЮДА ID СВОЕЙ ТАБЛИЦЫ (из Шага 1)
+# ВСТАВЬ СЮДА ID СВОЕЙ ТАБЛИЦЫ (из адресной строки Google Sheets)
 SHEET_ID = '1Z1Td434s7Y4LnGwACfccrDhPcIqTS7sWSvO_UQJMDBA' 
-CREDS_FILE = 'credentials.json'
+
+# Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
+CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 SCOPE = [
     'https://spreadsheets.google.com/feeds',
@@ -14,11 +18,15 @@ SCOPE = [
 
 def get_client():
     """Авторизация в Google Sheets"""
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, SCOPE)
+    if CREDS_JSON:
+        # Для Railway: читаем из переменной окружения
+        creds_dict = json.loads(CREDS_JSON)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+    else:
+        # Для локального запуска: читаем из файла credentials.json
+        creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', SCOPE)
+    
     return gspread.authorize(creds)
-
-def update_sheet_status(article, status, date_str=""):
-    """Обновляет статус и дату продажи в Google Таблице при действиях бота"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
