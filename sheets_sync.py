@@ -106,3 +106,61 @@ def sync_sheet_to_db():
     except Exception as e:
         print(f"❌ Ошибка синхронизации из таблицы: {e}")
         return 0
+    
+def export_db_to_sheet():
+    """Выгружает все данные из SQLite в Google Таблицу"""
+        
+        # Читаем все данные из базы
+    try:   
+        client = get_client()
+        sheet = client.open_by_key(SHEET_ID).sheet1
+        
+        # Читаем все данные из базы
+        conn = sqlite3.connect("parts_database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
+        parts = cursor.fetchall()
+        conn.close()
+        
+        if not parts:
+            return "❌ База данных пустая!"
+        
+        # Формируем данные для таблицы
+        rows_to_add = []
+        for part in parts:
+            article, name, brand, model, price, location, status = part
+            
+            # Преобразуем статус в читаемый вид
+            status_text = {
+                'available': 'Свободна',
+                'sold': 'Продана',
+                'paid': 'Оплачена',
+                'shipped': 'Отгружена'
+            }.get(status, status)
+            
+            rows_to_add.append([
+                article,
+                name,
+                brand,
+                model,
+                price,
+                '',  # Цена закуп (пусто, если нет в базе)
+                location,
+                status_text,
+                '',  # Дата продажи (пусто)
+                ''   # Размещено на Дром (пусто)
+            ])
+        
+        # Очищаем таблицу (кроме заголовков) и добавляем данные
+        # Сначала удаляем всё, кроме первой строки (заголовки)
+        if sheet.row_count > 1:
+            sheet.delete_rows(2, sheet.row_count)
+        
+        # Добавляем все строки
+        if rows_to_add:
+            sheet.append_rows(rows_to_add)
+        
+        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в таблицу!"
+        
+    except Exception as e:
+        return f"❌ Ошибка при выгрузке: {e}"

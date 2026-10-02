@@ -155,6 +155,11 @@ async def cmd_reply(message: types.Message):
         conn.close()
     except ValueError:
         await message.answer("❌ ID должен быть числом")
+@dp.message(Command("export_to_sheet"))
+async def cmd_export_to_sheet(message: types.Message):
+    await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
+    report = sheets_sync.export_db_to_sheet()
+    await message.answer(report)
 
 @dp.message(Command("sync"))
 async def cmd_sync(message: types.Message):
@@ -339,35 +344,68 @@ async def handle_article_input(message: types.Message, state: FSMContext):
     else:
         await message.answer(f"❌ Не найдено: <code>{query}</code>", parse_mode="HTML")
 
-# ЕДИНСТВЕННЫЙ хендлер изменения статуса (убрали дубликат!)
 @dp.callback_query(lambda c: c.data and c.data.startswith(('sell_', 'paid_', 'ship_', 'available_')))
 async def handle_status_change(callback_query: types.CallbackQuery):
-    action, article = callback_query.data.split('_', 1)
-    
-    status_map = {
-        'sell': 'sold',
-        'paid': 'paid',
-        'ship': 'shipped',
-        'available': 'available'
-    }
-    
-    new_status = status_map.get(action)
-    if new_status:
+    try:
+        # Сразу даем понять, что бот работает
+        await callback_query.answer("⏳ Обрабатываю...")
+        
+        action, article = callback_query.data.split('_', 1)
+        article = article.strip() # Очищаем артикул от скрытых пробелов или переносов
+        
+        status_map = {
+            'sell': 'sold',
+            'paid': 'paid',
+            'ship': 'shipped',
+            'available': 'available'
+        }
+        
+        new_status = status_map.get(action)
+        if not new_status:
+            await callback_query.message.answer("❌ Неизвестное действие")
+            return
+        
+        # 1. Обновляем SQLite
         conn = sqlite3.connect("parts_database.db")
-        conn.execute("UPDATE parts SET status = ? WHERE артикул = ?", (new_status, article))
+        cursor = conn.cursor()
+        cursor.execute("UPDATE parts SET status = ? WHERE артикул = ?", (new_status, article))
         conn.commit()
+        
+        # Проверяем, действительно ли база обновилась
+        cursor.execute("SELECT status FROM parts WHERE артикул = ?", (article,))
+        check_result = cursor.fetchone()
         conn.close()
         
-        # 🆕 ОБНОВЛЯЕМ GOOGLE ТАБЛИЦУ!
+        if not check_result or check_result[0] != new_status:
+            await callback_query.message.answer(f"❌ Ошибка БД: не удалось обновить статус для {article}")
+            return
+
+        # 2. Обновляем Google Sheets
         current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
         status_text = {"sold": "Продана", "paid": "Оплачена", "shipped": "Отгружена", "available": "Свободна"}.get(new_status, new_status)
-        sync_report = sheets_sync.update_sheet_status(article, status_text, current_date if new_status in ['sold', 'paid', 'shipped'] else "")
         
-        status_emoji = {"available": " Свободна", "sold": "🔴 Продана", "paid": " Оплачена", "shipped": " Отгружена"}.get(new_status, "❓")
-        await callback_query.message.edit_text(f"✅ Статус изменен: {status_emoji}\n\n📝 {sync_report}")
-        await callback_query.answer()
-    else:
-        await callback_query.answer("❌ Неизвестное действие")
+        # Вызываем функцию и получаем текстовый отчет
+        sync_report = sheets_sync.update_sheet_status(
+            article, 
+            status_text, 
+            current_date if new_status in ['sold', 'paid', 'shipped'] else ""
+        )
+        
+        # 3. Отправляем подробный отчет пользователю
+        status_emoji = {"available": "🟢 Свободна", "sold": "🔴 Продана", "paid": "🟡 Оплачена", "shipped": "📦 Отгружена"}.get(new_status, "❓")
+        
+        await callback_query.message.answer(
+            f"✅ Статус изменен: {status_emoji}\n"
+            f"📦 Артикул: <code>{article}</code>\n"
+            f"📝 Отчет таблицы: {sync_report}",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        # Если произошла любая ошибка, мы обязательно её увидим в Telegram
+        error_msg = f"🔥 КРИТИЧЕСКАЯ ОШИБКА:\n<code>{str(e)}</code>"
+        await callback_query.message.answer(error_msg, parse_mode="HTML")
+        print(f"ERROR in handle_status_change: {e}")
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('detail_'))
 async def handle_detail_click(callback_query: types.CallbackQuery):
