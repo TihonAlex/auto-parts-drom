@@ -90,14 +90,20 @@ def sync_sheet_to_db():
 def export_db_to_sheet():
     """Выгружает все данные из SQLite в Google Таблицу"""
     try:
+        print(f" Подключаемся к таблице ID: {SHEET_ID}")
         client = get_client()
+        print("✅ Клиент авторизован")
+        
         sheet = client.open_by_key(SHEET_ID).sheet1
+        print(f"✅ Таблица открыта: {sheet.title}")
         
         conn = sqlite3.connect("parts_database.db")
         cursor = conn.cursor()
         cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
         parts = cursor.fetchall()
         conn.close()
+        
+        print(f" Найдено {len(parts)} позиций в базе")
         
         if not parts:
             return "❌ База данных пустая!"
@@ -114,27 +120,18 @@ def export_db_to_sheet():
             }.get(status, status)
             
             rows_to_add.append([
-                article,
-                name,
-                brand,
-                model,
-                price,
-                '',
-                location,
-                status_text,
-                '',
-                ''
+                article, name, brand, model, price, '', location, status_text, '', ''
             ])
         
-        # Удаляем старые данные (кроме заголовков)
         if sheet.row_count > 1:
             sheet.delete_rows(2, sheet.row_count)
         
-        # Добавляем новые данные
         if rows_to_add:
             sheet.append_rows(rows_to_add)
         
         return f"✅ Выгружено {len(rows_to_add)} позиций!"
         
     except Exception as e:
-        return f"❌ Ошибка: {e}"
+        error_details = f"Тип ошибки: {type(e).__name__}\nТекст: {str(e)}"
+        print(f"❌ Ошибка: {error_details}")
+        return f"❌ Ошибка: {error_details}"
