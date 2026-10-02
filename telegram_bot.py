@@ -174,7 +174,7 @@ async def cmd_sync(message: types.Message):
 async def cmd_export_to_sheet(message: types.Message):
     await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
     report = sheets_sync.export_db_to_sheet()
-    await message.answer(report)
+    await message.answer(report)  # Убрали parse_mode="HTML"
 
 @dp.message(Command("test_message"))
 async def cmd_test_message(message: types.Message):
