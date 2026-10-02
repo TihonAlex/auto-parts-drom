@@ -5,8 +5,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 import sqlite3
 from datetime import datetime
 
-# ВСТАВЬ СЮДА ID СВОЕЙ РАБОЧЕЙ GOOGLE ТАБЛИЦЫ (из адресной строки)
-SHEET_ID = '1YybdZWWlKPUZMqrlMVsh0CAxKs-5WhVn2HYE7que1SM' 
+# ВСТАВЬ СЮДА ID СВОЕЙ РАБОЧЕЙ GOOGLE ТАБЛИЦЫ
+SHEET_ID = '1YybdZWWIKPUZMqrIMVsh0CAxKs-5WhVn2HYE7que1SM'
 
 # Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
 CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -20,11 +20,9 @@ def get_client():
     """Авторизация в Google Sheets"""
     try:
         if CREDS_JSON:
-            # Для Railway: читаем из переменной окружения
             creds_dict = json.loads(CREDS_JSON)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
         else:
-            # Для локального запуска: читаем из файла credentials.json
             creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', SCOPE)
         
         return gspread.authorize(creds)
@@ -33,35 +31,27 @@ def get_client():
         raise e
 
 def update_sheet_status(article, status, date_str=""):
-    """Обновляет статус и дату продажи в Google Таблице и возвращает отчет"""
+    """Обновляет статус и дату продажи в Google Таблице"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         
-        # Очищаем артикул от случайных пробелов для надежного поиска
         clean_article = str(article).strip()
-        
-        # Ищем ячейку с нужным артикулом
         cell = sheet.find(clean_article)
         
         if cell:
             row = cell.row
-            # Колонка H (8) = Статус
             sheet.update_cell(row, 8, status)
-            
-            # Колонка I (9) = Дата продажи
             if date_str:
                 sheet.update_cell(row, 9, date_str)
-                
-            return f"✅ Строка {row} в таблице успешно обновлена."
+            return f"✅ Строка {row} обновлена."
         else:
-            return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице. Проверьте ID таблицы и наличие артикула в колонке А."
-            
+            return f"️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
     except Exception as e:
-        return f"❌ Ошибка при обновлении таблицы: {str(e)}"
+        return f"❌ Ошибка: {str(e)}"
 
 def sync_sheet_to_db():
-    """Забирает новые позиции из Google Таблицы в локальную базу SQLite"""
+    """Забирает новые позиции из Google Таблицы в SQLite"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
@@ -72,50 +62,37 @@ def sync_sheet_to_db():
         added_count = 0
         
         for row in data:
-            article = str(row.get('Артикул', '')).strip()
-            # Пропускаем пустые строки или заголовки
+            article = str(row.get('АРТИКУЛ', '')).strip()
             if not article or article.lower() in ['nan', 'none', '', 'артикул']:
                 continue
             
-            # Проверяем, есть ли уже такая деталь в базе
             cursor.execute("SELECT 1 FROM parts WHERE артикул = ?", (article,))
             if not cursor.fetchone():
-                # Если нет, добавляем её
-                name = str(row.get('Наименование', ''))
-                brand = str(row.get('Марка', ''))
-                model = str(row.get('Модель', ''))
-                price = str(row.get('Цена к продаже', ''))
-                location = str(row.get('Локация', ''))
-                status = str(row.get('Статус', 'available')).lower()
+                name = str(row.get('НАИМЕНОВАНИЕ', ''))
+                brand = str(row.get('МАРКА', ''))
+                model = str(row.get('МОДЕЛЬ', ''))
+                price = str(row.get('ЦЕНА К ПРОДАЖЕ', ''))
+                location = str(row.get('ЛОКАЦИЯ', ''))
                 
-                # Приводим статус к формату базы (available, sold, paid, shipped)
-                if 'продан' in status: status = 'sold'
-                elif 'оплач' in status: status = 'paid'
-                elif 'отгруж' in status: status = 'shipped'
-                else: status = 'available'
-
                 cursor.execute("""
                     INSERT INTO parts (артикул, наименование, марка, модель, цена_дром, остаток, локация, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (article, name, brand, model, price, '1', location, status))
+                """, (article, name, brand, model, price, '1', location, 'available'))
                 added_count += 1
         
         conn.commit()
         conn.close()
         return added_count
     except Exception as e:
-        print(f"❌ Ошибка синхронизации из таблицы: {e}")
+        print(f" Ошибка синхронизации: {e}")
         return 0
-    
+
 def export_db_to_sheet():
     """Выгружает все данные из SQLite в Google Таблицу"""
-        
-        # Читаем все данные из базы
-    try:   
+    try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         
-        # Читаем все данные из базы
         conn = sqlite3.connect("parts_database.db")
         cursor = conn.cursor()
         cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
@@ -125,12 +102,10 @@ def export_db_to_sheet():
         if not parts:
             return "❌ База данных пустая!"
         
-        # Формируем данные для таблицы
         rows_to_add = []
         for part in parts:
             article, name, brand, model, price, location, status = part
             
-            # Преобразуем статус в читаемый вид
             status_text = {
                 'available': 'Свободна',
                 'sold': 'Продана',
@@ -144,23 +119,22 @@ def export_db_to_sheet():
                 brand,
                 model,
                 price,
-                '',  # Цена закуп (пусто, если нет в базе)
+                '',
                 location,
                 status_text,
-                '',  # Дата продажи (пусто)
-                ''   # Размещено на Дром (пусто)
+                '',
+                ''
             ])
         
-        # Очищаем таблицу (кроме заголовков) и добавляем данные
-        # Сначала удаляем всё, кроме первой строки (заголовки)
+        # Удаляем старые данные (кроме заголовков)
         if sheet.row_count > 1:
             sheet.delete_rows(2, sheet.row_count)
         
-        # Добавляем все строки
+        # Добавляем новые данные
         if rows_to_add:
             sheet.append_rows(rows_to_add)
         
-        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в таблицу!"
+        return f"✅ Выгружено {len(rows_to_add)} позиций!"
         
     except Exception as e:
-        return f"❌ Ошибка при выгрузке: {e}"
+        return f"❌ Ошибка: {e}"
