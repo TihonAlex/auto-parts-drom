@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
+from html import escape 
 import sales
 import shipping
 import sheets_sync
@@ -174,7 +175,9 @@ async def cmd_sync(message: types.Message):
 async def cmd_export_to_sheet(message: types.Message):
     await message.answer("⏳ Выгружаю все данные из базы в Google Таблицу...")
     report = sheets_sync.export_db_to_sheet()
-    await message.answer(report)  # Убрали parse_mode="HTML"
+    # Экранируем специальные символы
+    safe_report = escape(report)
+    await message.answer(safe_report, parse_mode="HTML")
 
 @dp.message(Command("test_message"))
 async def cmd_test_message(message: types.Message):
@@ -393,12 +396,16 @@ async def handle_status_change(callback_query: types.CallbackQuery):
         )
         
         # 3. Отправляем подробный отчет пользователю
+        # 3. Отправляем подробный отчет пользователю
         status_emoji = {"available": "🟢 Свободна", "sold": "🔴 Продана", "paid": "🟡 Оплачена", "shipped": "📦 Отгружена"}.get(new_status, "❓")
+        
+        # Экранируем специальные символы в отчете, чтобы не ломать HTML
+        safe_report = escape(sync_report)
         
         await callback_query.message.answer(
             f"✅ Статус изменен: {status_emoji}\n"
-            f"📦 Артикул: <code>{article}</code>\n"
-            f"📝 Отчет таблицы: {sync_report}",
+            f"📦 Артикул: <code>{escape(article)}</code>\n"
+            f" Отчет таблицы: {safe_report}",
             parse_mode="HTML"
         )
         
