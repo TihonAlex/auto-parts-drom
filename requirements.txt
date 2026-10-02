@@ -2,3 +2,6 @@ aiogram
 python-dotenv
 aiohttp
 requests
+gspread
+oauth2clientgspread
+oauth2client

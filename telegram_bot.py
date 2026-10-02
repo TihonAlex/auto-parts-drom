@@ -10,6 +10,8 @@ import time
 import re
 import os
 import shipping
+import sheets_sync
+from datetime import datetime
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -165,6 +167,19 @@ async def cmd_reply(message: types.Message):
     except ValueError:
         await message.answer("❌ ID должен быть числом")
 
+@dp.message(Command("sync"))
+async def cmd_sync(message: types.Message):
+    if message.from_user.id != 379327403: # Твой ID админа
+        return
+        
+    await message.answer("⏳ Синхронизация с Google Таблицей...")
+    added = sheets_sync.sync_sheet_to_db()
+    
+    if added > 0:
+        await message.answer(f"✅ Успешно! Добавлено новых позиций из таблицы: <b>{added}</b>")
+    else:
+        await message.answer("✅ Синхронизация завершена. Новых позиций не найдено.")
+
 @dp.message(Command("test_message"))
 async def cmd_test_message(message: types.Message):
     conn = sqlite3.connect("parts_database.db")
@@ -191,6 +206,9 @@ async def process_client_name(message: types.Message, state: FSMContext):
     sale_id = sales.create_sale(article, client_name)
     
     if sale_id > 0:
+        # 🆕 ДОБАВЛЯЕМ ЭТУ СТРОКУ: обновляем Google Таблицу
+        current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
+        sheets_sync.update_sheet_status(article, "Резерв", current_date)
         await message.answer(
             f"✅ <b>Резерв #{sale_id} создан!</b>\n"
             f"🔩 Деталь: {article}\n"

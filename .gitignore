@@ -1,7 +1,8 @@
 *.xls
 *.xlsx
 *.csv
-*.db
-*.sqlite
+# *.db
+# *.sqlite
 .DS_Store
 __pycache__/
+credentials.json
