@@ -93,7 +93,7 @@ def update_sheet_status(article, status, date_str=""):
         # 5. Отправляем запрос через объект таблицы
         spreadsheet.batch_update({"requests": requests})
         
-        return f"✅ Строка {row} обновлена. Статус: '{status_text}', цвет изменён в A/B/P/Q."
+        return f"✅ Строка {row} обновлена. Статус: '{status_text}'."
         
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
