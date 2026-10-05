@@ -30,7 +30,8 @@ def update_sheet_status(article, status, date_str=""):
        и меняет цвет текста в колонках A, B, P при статусе 'Продана'"""
     try:
         client = get_client()
-        sheet = client.open_by_key(SHEET_ID).sheet1
+        spreadsheet = client.open_by_key(SHEET_ID)  # ← Открываем саму таблицу
+        sheet = spreadsheet.sheet1
         
         clean_article = str(article).strip()
         cell = sheet.find(clean_article)
@@ -47,9 +48,9 @@ def update_sheet_status(article, status, date_str=""):
         
         # 2. Определяем цвет текста
         if status == "Продана":
-            text_color = {'red': 0.0, 'green': 0.7, 'blue': 0.0}  #  Зелёный
+            text_color = {'red': 0.0, 'green': 0.7, 'blue': 0.0}  # 🟢 Зелёный
         else:
-            text_color = {'red': 0.0, 'green': 0.0, 'blue': 0.0}  # ⚫ Чёрный (стандарт)
+            text_color = {'red': 0.0, 'green': 0.0, 'blue': 0.0}  # ⚫ Чёрный
         
         # 3. Красим текст в колонках A (1), B (2), P (16)
         # Индексы колонок считаются с 0: A=0, B=1, P=15
@@ -76,14 +77,74 @@ def update_sheet_status(article, status, date_str=""):
                 }
             })
         
-        # Отправляем все запросы одним батчем
-        client.batch_update(SHEET_ID, {"requests": requests})
+        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (не клиента!)
+        spreadsheet.batch_update({"requests": requests})
         
         return f"✅ Строка {row} обновлена. Статус: '{status}', цвет текста изменён."
         
     except Exception as e:
-        return f" Ошибка: {str(e)}"
-    
+        return f"❌ Ошибка: {str(e)}"
+
+ def update_sheet_status(article, status, date_str=""):
+    """Обновляет СТАТУС ПРОДАЖИ (кол. 17), ДАТУ ПРОДАЖИ (кол. 18) 
+       и меняет цвет текста в колонках A, B, P при статусе 'Продана'"""
+    try:
+        client = get_client()
+        spreadsheet = client.open_by_key(SHEET_ID)  # ← Открываем саму таблицу
+        sheet = spreadsheet.sheet1
+        
+        clean_article = str(article).strip()
+        cell = sheet.find(clean_article)
+        
+        if not cell:
+            return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
+        
+        row = cell.row
+        
+        # 1. Обновляем текст в колонках 17 (СТАТУС ПРОДАЖИ) и 18 (ДАТА ПРОДАЖИ)
+        sheet.update_cell(row, 17, status)
+        if date_str:
+            sheet.update_cell(row, 18, date_str)
+        
+        # 2. Определяем цвет текста
+        if status == "Продана":
+            text_color = {'red': 0.0, 'green': 0.7, 'blue': 0.0}  # 🟢 Зелёный
+        else:
+            text_color = {'red': 0.0, 'green': 0.0, 'blue': 0.0}  # ⚫ Чёрный
+        
+        # 3. Красим текст в колонках A (1), B (2), P (16)
+        # Индексы колонок считаются с 0: A=0, B=1, P=15
+        requests = []
+        for col_index in [0, 1, 15]:  # A, B, P
+            requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet.id,
+                        "startRowIndex": row - 1,
+                        "endRowIndex": row,
+                        "startColumnIndex": col_index,
+                        "endColumnIndex": col_index + 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {
+                                "foregroundColor": text_color,
+                                "bold": (status == "Продана")  # Жирный только при продаже
+                            }
+                        }
+                    },
+                    "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                }
+            })
+        
+        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (не клиента!)
+        spreadsheet.batch_update({"requests": requests})
+        
+        return f"✅ Строка {row} обновлена. Статус: '{status}', цвет текста изменён."
+        
+    except Exception as e:
+        return f"❌ Ошибка: {str(e)}"   
+
 def export_db_to_sheet():
     """Выгружает данные из SQLite в таблицу, соблюдая новую структуру из 18 колонок"""
     try:
