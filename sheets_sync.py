@@ -5,10 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import sqlite3
 from datetime import datetime
 
-# ID твоей рабочей таблицы (из успешного теста)
 SHEET_ID = '1YybdZWWlKPUZMqrlMVsh0CAxKs-5WhVn2HYE7que1SM'
-
-# Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
 CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 SCOPE = [
@@ -17,7 +14,6 @@ SCOPE = [
 ]
 
 def get_client():
-    """Авторизация в Google Sheets"""
     try:
         if CREDS_JSON:
             creds_dict = json.loads(CREDS_JSON)
@@ -30,7 +26,7 @@ def get_client():
         raise e
 
 def update_sheet_status(article, status, date_str=""):
-    """Обновляет СТАТУС (кол. 8) и ДАТУ ПРОДАЖИ (кол. 9) в существующей таблице"""
+    """Обновляет СТАТУС ПРОДАЖИ (кол. 17) и ДАТУ ПРОДАЖИ (кол. 18)"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
@@ -40,25 +36,25 @@ def update_sheet_status(article, status, date_str=""):
         
         if cell:
             row = cell.row
-            # Колонка 8 = СТАТУС, Колонка 9 = ДАТА ПРОДАЖИ
-            sheet.update_cell(row, 8, status)
+            # Колонка 17 = СТАТУС ПРОДАЖИ, Колонка 18 = ДАТА ПРОДАЖИ
+            sheet.update_cell(row, 17, status)
             if date_str:
-                sheet.update_cell(row, 9, date_str)
-            return f"✅ Строка {row} успешно обновлена."
+                sheet.update_cell(row, 18, date_str)
+            return f"✅ Строка {row} успешно обновлена (Статус и Дата)."
         else:
             return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
 def export_db_to_sheet():
-    """Выгружает все данные из SQLite в твою существующую таблицу, сохраняя колонки"""
+    """Выгружает данные из SQLite в таблицу, соблюдая новую структуру из 18 колонок"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         
         conn = sqlite3.connect("parts_database.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
+        cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, остаток, локация, status FROM parts")
         parts = cursor.fetchall()
         conn.close()
         
@@ -67,7 +63,7 @@ def export_db_to_sheet():
         
         rows_to_add = []
         for part in parts:
-            article, name, brand, model, price_sale, location, status = part
+            article, name, brand, model, price_drom, stock, location, status = part
             
             status_text = {
                 'available': 'Свободна',
@@ -76,22 +72,26 @@ def export_db_to_sheet():
                 'shipped': 'Отгружена'
             }.get(status, 'Свободна')
             
-            # Маппинг строго под твои 11 колонок:
-            # 1: АРТИКУЛ, 2: НАИМЕНОВАНИЕ, 3: МАРКА, 4: МОДЕЛЬ, 
-            # 5: ЦЕНА СКЛАД (пока пусто), 6: ЦЕНА К ПРОДАЖЕ, 7: ЛОКАЦИЯ, 
-            # 8: СТАТУС, 9: ДАТА ПРОДАЖИ (пусто), 10: РАЗМЕЩЕНО НА ДРОМ (пусто), 11: КОММЕНТАРИИ (пусто)
+            # Маппинг строго под 18 колонок:
             rows_to_add.append([
-                article,
-                name,
-                brand,
-                model,
-                '',                # ЦЕНА СКЛАД
-                str(price_sale),   # ЦЕНА К ПРОДАЖЕ
-                location,
-                status_text,       # СТАТУС
-                '',                # ДАТА ПРОДАЖИ
-                '',                # РАЗМЕЩЕНО НА ДРОМ
-                ''                 # КОММЕНТАРИИ
+                article,          # 1. АРТИКУЛ
+                name,             # 2. НАИМЕНОВАНИЕ
+                '',               # 3. КАТЕГОРИЯ (пока пусто)
+                '',               # 4. ПОДКАТЕГОРИЯ (пока пусто)
+                brand,            # 5. МАРКА
+                model,            # 6. МОДЕЛЬ
+                '',               # 7. № КУЗОВА (пока пусто)
+                '',               # 8. СОСТОЯНИЕ (пока пусто)
+                '',               # 9. ПРОИЗВОДИТЕЛЬ (пока пусто)
+                str(stock),       # 10. ОСТАТОК
+                '',               # 11. ПРИМЕЧАНИЕ (пока пусто)
+                location,         # 12. ЛОКАЦИЯ
+                '',               # 13. ЦЕНА ЗАКУП (пока пусто)
+                '',               # 14. ЦЕНА ОПТ (пока пусто)
+                str(price_drom),  # 15. ЦЕНА ДРОМ
+                '',               # 16. СТАТУС ДРОМ (пока пусто)
+                status_text,      # 17. СТАТУС ПРОДАЖИ
+                ''                # 18. ДАТА ПРОДАЖИ (пока пусто)
             ])
         
         # Очищаем старые данные (оставляем только заголовки в строке 1)
@@ -102,13 +102,13 @@ def export_db_to_sheet():
         if rows_to_add:
             sheet.append_rows(rows_to_add)
         
-        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в таблицу!"
+        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в новую структуру!"
         
     except Exception as e:
         return f"❌ Ошибка при выгрузке: {e}"
 
 def sync_sheet_to_db():
-    """Забирает новые позиции из Google Таблицы в SQLite (если офис добавил вручную)"""
+    """Забирает новые позиции из Google Таблицы в SQLite"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
@@ -128,9 +128,10 @@ def sync_sheet_to_db():
                 name = str(row.get('НАИМЕНОВАНИЕ', ''))
                 brand = str(row.get('МАРКА', ''))
                 model = str(row.get('МОДЕЛЬ', ''))
-                price = str(row.get('ЦЕНА К ПРОДАЖЕ', ''))
+                price = str(row.get('ЦЕНА ДРОМ', ''))
                 location = str(row.get('ЛОКАЦИЯ', ''))
                 
+                # Базовая синхронизация основных полей
                 cursor.execute("""
                     INSERT INTO parts (артикул, наименование, марка, модель, цена_дром, остаток, локация, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
