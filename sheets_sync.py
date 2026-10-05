@@ -5,7 +5,10 @@ from oauth2client.service_account import ServiceAccountCredentials
 import sqlite3
 from datetime import datetime
 
+# ID твоей рабочей таблицы
 SHEET_ID = '1YybdZWWlKPUZMqrlMVsh0CAxKs-5WhVn2HYE7que1SM'
+
+# Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
 CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 SCOPE = [
@@ -14,6 +17,7 @@ SCOPE = [
 ]
 
 def get_client():
+    """Авторизация в Google Sheets"""
     try:
         if CREDS_JSON:
             creds_dict = json.loads(CREDS_JSON)
@@ -30,14 +34,14 @@ def update_sheet_status(article, status, date_str=""):
        и меняет цвет текста в колонках A, B, P при статусе 'Продана'"""
     try:
         client = get_client()
-        spreadsheet = client.open_by_key(SHEET_ID)  # ← Открываем саму таблицу
+        spreadsheet = client.open_by_key(SHEET_ID)  # ← ВАЖНО: получаем объект таблицы
         sheet = spreadsheet.sheet1
         
         clean_article = str(article).strip()
         cell = sheet.find(clean_article)
         
         if not cell:
-            return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
+            return f"️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
         
         row = cell.row
         
@@ -77,7 +81,7 @@ def update_sheet_status(article, status, date_str=""):
                 }
             })
         
-        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (не клиента!)
+        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (spreadsheet), а НЕ client!
         spreadsheet.batch_update({"requests": requests})
         
         return f"✅ Строка {row} обновлена. Статус: '{status}', цвет текста изменён."
@@ -85,71 +89,12 @@ def update_sheet_status(article, status, date_str=""):
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
- def update_sheet_status(article, status, date_str=""):
-    """Обновляет СТАТУС ПРОДАЖИ (кол. 17), ДАТУ ПРОДАЖИ (кол. 18) 
-       и меняет цвет текста в колонках A, B, P при статусе 'Продана'"""
-    try:
-        client = get_client()
-        spreadsheet = client.open_by_key(SHEET_ID)  # ← Открываем саму таблицу
-        sheet = spreadsheet.sheet1
-        
-        clean_article = str(article).strip()
-        cell = sheet.find(clean_article)
-        
-        if not cell:
-            return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
-        
-        row = cell.row
-        
-        # 1. Обновляем текст в колонках 17 (СТАТУС ПРОДАЖИ) и 18 (ДАТА ПРОДАЖИ)
-        sheet.update_cell(row, 17, status)
-        if date_str:
-            sheet.update_cell(row, 18, date_str)
-        
-        # 2. Определяем цвет текста
-        if status == "Продана":
-            text_color = {'red': 0.0, 'green': 0.7, 'blue': 0.0}  # 🟢 Зелёный
-        else:
-            text_color = {'red': 0.0, 'green': 0.0, 'blue': 0.0}  # ⚫ Чёрный
-        
-        # 3. Красим текст в колонках A (1), B (2), P (16)
-        # Индексы колонок считаются с 0: A=0, B=1, P=15
-        requests = []
-        for col_index in [0, 1, 15]:  # A, B, P
-            requests.append({
-                "repeatCell": {
-                    "range": {
-                        "sheetId": sheet.id,
-                        "startRowIndex": row - 1,
-                        "endRowIndex": row,
-                        "startColumnIndex": col_index,
-                        "endColumnIndex": col_index + 1
-                    },
-                    "cell": {
-                        "userEnteredFormat": {
-                            "textFormat": {
-                                "foregroundColor": text_color,
-                                "bold": (status == "Продана")  # Жирный только при продаже
-                            }
-                        }
-                    },
-                    "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
-                }
-            })
-        
-        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (не клиента!)
-        spreadsheet.batch_update({"requests": requests})
-        
-        return f"✅ Строка {row} обновлена. Статус: '{status}', цвет текста изменён."
-        
-    except Exception as e:
-        return f"❌ Ошибка: {str(e)}"   
-
 def export_db_to_sheet():
-    """Выгружает данные из SQLite в таблицу, соблюдая новую структуру из 18 колонок"""
+    """Выгружает данные из SQLite в таблицу, соблюдая структуру из 18 колонок"""
     try:
         client = get_client()
-        sheet = client.open_by_key(SHEET_ID).sheet1
+        spreadsheet = client.open_by_key(SHEET_ID)
+        sheet = spreadsheet.sheet1
         
         conn = sqlite3.connect("parts_database.db")
         cursor = conn.cursor()
@@ -171,37 +116,34 @@ def export_db_to_sheet():
                 'shipped': 'Отгружена'
             }.get(status, 'Свободна')
             
-            # Маппинг строго под 18 колонок:
             rows_to_add.append([
                 article,          # 1. АРТИКУЛ
                 name,             # 2. НАИМЕНОВАНИЕ
-                '',               # 3. КАТЕГОРИЯ (пока пусто)
-                '',               # 4. ПОДКАТЕГОРИЯ (пока пусто)
+                '',               # 3. КАТЕГОРИЯ
+                '',               # 4. ПОДКАТЕГОРИЯ
                 brand,            # 5. МАРКА
                 model,            # 6. МОДЕЛЬ
-                '',               # 7. № КУЗОВА (пока пусто)
-                '',               # 8. СОСТОЯНИЕ (пока пусто)
-                '',               # 9. ПРОИЗВОДИТЕЛЬ (пока пусто)
+                '',               # 7. № КУЗОВА
+                '',               # 8. СОСТОЯНИЕ
+                '',               # 9. ПРОИЗВОДИТЕЛЬ
                 str(stock),       # 10. ОСТАТОК
-                '',               # 11. ПРИМЕЧАНИЕ (пока пусто)
+                '',               # 11. ПРИМЕЧАНИЕ
                 location,         # 12. ЛОКАЦИЯ
-                '',               # 13. ЦЕНА ЗАКУП (пока пусто)
-                '',               # 14. ЦЕНА ОПТ (пока пусто)
+                '',               # 13. ЦЕНА ЗАКУП
+                '',               # 14. ЦЕНА ОПТ
                 str(price_drom),  # 15. ЦЕНА ДРОМ
-                '',               # 16. СТАТУС ДРОМ (пока пусто)
+                '',               # 16. СТАТУС ДРОМ
                 status_text,      # 17. СТАТУС ПРОДАЖИ
-                ''                # 18. ДАТА ПРОДАЖИ (пока пусто)
+                ''                # 18. ДАТА ПРОДАЖИ
             ])
         
-        # Очищаем старые данные (оставляем только заголовки в строке 1)
         if sheet.row_count > 1:
             sheet.delete_rows(2, sheet.row_count)
         
-        # Добавляем актуальные данные
         if rows_to_add:
             sheet.append_rows(rows_to_add)
         
-        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в новую структуру!"
+        return f"✅ Успешно выгружено {len(rows_to_add)} позиций!"
         
     except Exception as e:
         return f"❌ Ошибка при выгрузке: {e}"
@@ -210,7 +152,8 @@ def sync_sheet_to_db():
     """Забирает новые позиции из Google Таблицы в SQLite"""
     try:
         client = get_client()
-        sheet = client.open_by_key(SHEET_ID).sheet1
+        spreadsheet = client.open_by_key(SHEET_ID)
+        sheet = spreadsheet.sheet1
         data = sheet.get_all_records()
         
         conn = sqlite3.connect("parts_database.db")
@@ -230,7 +173,6 @@ def sync_sheet_to_db():
                 price = str(row.get('ЦЕНА ДРОМ', ''))
                 location = str(row.get('ЛОКАЦИЯ', ''))
                 
-                # Базовая синхронизация основных полей
                 cursor.execute("""
                     INSERT INTO parts (артикул, наименование, марка, модель, цена_дром, остаток, локация, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
