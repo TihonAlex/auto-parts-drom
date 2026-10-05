@@ -5,8 +5,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 import sqlite3
 from datetime import datetime
 
-# ВСТАВЬ СЮДА ID СВОЕЙ РАБОЧЕЙ GOOGLE ТАБЛИЦЫ
-SHEET_ID = '1YybdZWWIKPUZMqrIMVsh0CAxKs-5WhVn2HYE7que1SM'
+# ID твоей рабочей таблицы (из успешного теста)
+SHEET_ID = '1YybdZWWlKPUZMqrlMVsh0CAxKs-5WhVn2HYE7que1SM'
 
 # Получаем JSON либо из переменной окружения (Railway), либо из файла (локально)
 CREDS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -24,14 +24,13 @@ def get_client():
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
         else:
             creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', SCOPE)
-        
         return gspread.authorize(creds)
     except Exception as e:
-        print(f"❌ Ошибка авторизации Google Sheets: {e}")
+        print(f"❌ Ошибка авторизации: {e}")
         raise e
 
 def update_sheet_status(article, status, date_str=""):
-    """Обновляет статус и дату продажи в Google Таблице"""
+    """Обновляет СТАТУС (кол. 8) и ДАТУ ПРОДАЖИ (кол. 9) в существующей таблице"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
@@ -41,17 +40,75 @@ def update_sheet_status(article, status, date_str=""):
         
         if cell:
             row = cell.row
+            # Колонка 8 = СТАТУС, Колонка 9 = ДАТА ПРОДАЖИ
             sheet.update_cell(row, 8, status)
             if date_str:
                 sheet.update_cell(row, 9, date_str)
-            return f"✅ Строка {row} обновлена."
+            return f"✅ Строка {row} успешно обновлена."
         else:
-            return f"️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
+            return f"⚠️ Артикул '{clean_article}' НЕ НАЙДЕН в таблице."
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
+def export_db_to_sheet():
+    """Выгружает все данные из SQLite в твою существующую таблицу, сохраняя колонки"""
+    try:
+        client = get_client()
+        sheet = client.open_by_key(SHEET_ID).sheet1
+        
+        conn = sqlite3.connect("parts_database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
+        parts = cursor.fetchall()
+        conn.close()
+        
+        if not parts:
+            return "❌ База данных пустая!"
+        
+        rows_to_add = []
+        for part in parts:
+            article, name, brand, model, price_sale, location, status = part
+            
+            status_text = {
+                'available': 'Свободна',
+                'sold': 'Продана',
+                'paid': 'Оплачена',
+                'shipped': 'Отгружена'
+            }.get(status, 'Свободна')
+            
+            # Маппинг строго под твои 11 колонок:
+            # 1: АРТИКУЛ, 2: НАИМЕНОВАНИЕ, 3: МАРКА, 4: МОДЕЛЬ, 
+            # 5: ЦЕНА СКЛАД (пока пусто), 6: ЦЕНА К ПРОДАЖЕ, 7: ЛОКАЦИЯ, 
+            # 8: СТАТУС, 9: ДАТА ПРОДАЖИ (пусто), 10: РАЗМЕЩЕНО НА ДРОМ (пусто), 11: КОММЕНТАРИИ (пусто)
+            rows_to_add.append([
+                article,
+                name,
+                brand,
+                model,
+                '',                # ЦЕНА СКЛАД
+                str(price_sale),   # ЦЕНА К ПРОДАЖЕ
+                location,
+                status_text,       # СТАТУС
+                '',                # ДАТА ПРОДАЖИ
+                '',                # РАЗМЕЩЕНО НА ДРОМ
+                ''                 # КОММЕНТАРИИ
+            ])
+        
+        # Очищаем старые данные (оставляем только заголовки в строке 1)
+        if sheet.row_count > 1:
+            sheet.delete_rows(2, sheet.row_count)
+        
+        # Добавляем актуальные данные
+        if rows_to_add:
+            sheet.append_rows(rows_to_add)
+        
+        return f"✅ Успешно выгружено {len(rows_to_add)} позиций в таблицу!"
+        
+    except Exception as e:
+        return f"❌ Ошибка при выгрузке: {e}"
+
 def sync_sheet_to_db():
-    """Забирает новые позиции из Google Таблицы в SQLite"""
+    """Забирает новые позиции из Google Таблицы в SQLite (если офис добавил вручную)"""
     try:
         client = get_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
@@ -84,54 +141,5 @@ def sync_sheet_to_db():
         conn.close()
         return added_count
     except Exception as e:
-        print(f" Ошибка синхронизации: {e}")
+        print(f"❌ Ошибка синхронизации: {e}")
         return 0
-
-def export_db_to_sheet():
-    """Выгружает все данные из SQLite в Google Таблицу"""
-    try:
-        print(f" Подключаемся к таблице ID: {SHEET_ID}")
-        client = get_client()
-        print("✅ Клиент авторизован")
-        
-        sheet = client.open_by_key(SHEET_ID).sheet1
-        print(f"✅ Таблица открыта: {sheet.title}")
-        
-        conn = sqlite3.connect("parts_database.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT артикул, наименование, марка, модель, цена_дром, локация, status FROM parts")
-        parts = cursor.fetchall()
-        conn.close()
-        
-        print(f" Найдено {len(parts)} позиций в базе")
-        
-        if not parts:
-            return "❌ База данных пустая!"
-        
-        rows_to_add = []
-        for part in parts:
-            article, name, brand, model, price, location, status = part
-            
-            status_text = {
-                'available': 'Свободна',
-                'sold': 'Продана',
-                'paid': 'Оплачена',
-                'shipped': 'Отгружена'
-            }.get(status, status)
-            
-            rows_to_add.append([
-                article, name, brand, model, price, '', location, status_text, '', ''
-            ])
-        
-        if sheet.row_count > 1:
-            sheet.delete_rows(2, sheet.row_count)
-        
-        if rows_to_add:
-            sheet.append_rows(rows_to_add)
-        
-        return f"✅ Выгружено {len(rows_to_add)} позиций!"
-        
-    except Exception as e:
-        error_details = f"Тип ошибки: {type(e).__name__}\nТекст: {str(e)}"
-        print(f"❌ Ошибка: {error_details}")
-        return f"❌ Ошибка: {error_details}"
