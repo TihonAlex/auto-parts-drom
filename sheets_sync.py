@@ -30,11 +30,13 @@ def get_client():
         raise e
 
 def update_sheet_status(article, status, date_str=""):
-    """Обновляет СТАТУС ПРОДАЖИ (кол. 17), ДАТУ ПРОДАЖИ (кол. 18) 
-       и меняет цвет текста в колонках A, B, P при статусе 'Продана'"""
+    """
+    Обновляет СТАТУС (кол. P=16) и ДАТУ ПРОДАЖИ (кол. Q=17).
+    При статусе 'Продана' → текст 'ПРОДАНА' заглавными, цвет букв зелёный в A, B, P, Q.
+    """
     try:
         client = get_client()
-        spreadsheet = client.open_by_key(SHEET_ID)  # ← ВАЖНО: получаем объект таблицы
+        spreadsheet = client.open_by_key(SHEET_ID)
         sheet = spreadsheet.sheet1
         
         clean_article = str(article).strip()
@@ -45,21 +47,28 @@ def update_sheet_status(article, status, date_str=""):
         
         row = cell.row
         
-        # 1. Обновляем текст в колонках 17 (СТАТУС ПРОДАЖИ) и 18 (ДАТА ПРОДАЖИ)
-        sheet.update_cell(row, 17, status)
-        if date_str:
-            sheet.update_cell(row, 18, date_str)
+        # 1. Определяем текст статуса (ПРОДАНА заглавными, если продана)
+        if status.lower() in ['продана', 'продано', 'sold']:
+            status_text = "ПРОДАНА"
+        else:
+            status_text = status
         
-        # 2. Определяем цвет текста
-        if status == "Продана":
+        # 2. Обновляем текст в колонках P (16) и Q (17)
+        sheet.update_cell(row, 16, status_text)
+        if date_str:
+            sheet.update_cell(row, 17, date_str)
+        
+        # 3. Определяем цвет текста
+        if status.lower() in ['продана', 'продано', 'sold', 'оплачена', 'paid']:
             text_color = {'red': 0.0, 'green': 0.7, 'blue': 0.0}  # 🟢 Зелёный
+            bold = True
         else:
             text_color = {'red': 0.0, 'green': 0.0, 'blue': 0.0}  # ⚫ Чёрный
+            bold = False
         
-        # 3. Красим текст в колонках A (1), B (2), P (16)
-        # Индексы колонок считаются с 0: A=0, B=1, P=15
+        # 4. Красим текст в колонках A(0), B(1), P(15), Q(16)
         requests = []
-        for col_index in [0, 1, 15]:  # A, B, P
+        for col_index in [0, 1, 15, 16]:  # A, B, P, Q
             requests.append({
                 "repeatCell": {
                     "range": {
@@ -73,7 +82,7 @@ def update_sheet_status(article, status, date_str=""):
                         "userEnteredFormat": {
                             "textFormat": {
                                 "foregroundColor": text_color,
-                                "bold": (status == "Продана")  # Жирный только при продаже
+                                "bold": bold
                             }
                         }
                     },
@@ -81,16 +90,16 @@ def update_sheet_status(article, status, date_str=""):
                 }
             })
         
-        # 4. ОТПРАВЛЯЕМ ЗАПРОС ЧЕРЕЗ ОБЪЕКТ ТАБЛИЦЫ (spreadsheet), а НЕ client!
+        # 5. Отправляем запрос через объект таблицы
         spreadsheet.batch_update({"requests": requests})
         
-        return f"✅ Строка {row} обновлена. Статус: '{status}', цвет текста изменён."
+        return f"✅ Строка {row} обновлена. Статус: '{status_text}', цвет изменён в A/B/P/Q."
         
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
 def export_db_to_sheet():
-    """Выгружает данные из SQLite в таблицу, соблюдая структуру из 18 колонок"""
+    """Выгружает данные из SQLite в таблицу (17 колонок: A-Q)"""
     try:
         client = get_client()
         spreadsheet = client.open_by_key(SHEET_ID)
@@ -111,35 +120,38 @@ def export_db_to_sheet():
             
             status_text = {
                 'available': 'Свободна',
-                'sold': 'Продана',
+                'sold': 'ПРОДАНА',
                 'paid': 'Оплачена',
                 'shipped': 'Отгружена'
             }.get(status, 'Свободна')
             
+            # Маппинг под 17 колонок (A-Q):
             rows_to_add.append([
-                article,          # 1. АРТИКУЛ
-                name,             # 2. НАИМЕНОВАНИЕ
-                '',               # 3. КАТЕГОРИЯ
-                '',               # 4. ПОДКАТЕГОРИЯ
-                brand,            # 5. МАРКА
-                model,            # 6. МОДЕЛЬ
-                '',               # 7. № КУЗОВА
-                '',               # 8. СОСТОЯНИЕ
-                '',               # 9. ПРОИЗВОДИТЕЛЬ
-                str(stock),       # 10. ОСТАТОК
-                '',               # 11. ПРИМЕЧАНИЕ
-                location,         # 12. ЛОКАЦИЯ
-                '',               # 13. ЦЕНА ЗАКУП
-                '',               # 14. ЦЕНА ОПТ
-                str(price_drom),  # 15. ЦЕНА ДРОМ
-                '',               # 16. СТАТУС ДРОМ
-                status_text,      # 17. СТАТУС ПРОДАЖИ
-                ''                # 18. ДАТА ПРОДАЖИ
+                article,          # 1. A: АРТИКУЛ
+                name,             # 2. B: НАИМЕНОВАНИЕ
+                '',               # 3. C: КАТЕГОРИЯ
+                '',               # 4. D: ПОДКАТЕГОРИЯ
+                brand,            # 5. E: МАРКА
+                model,            # 6. F: МОДЕЛЬ
+                '',               # 7. G: № КУЗОВА
+                '',               # 8. H: СОСТОЯНИЕ
+                '',               # 9. I: ПРОИЗВОДИТЕЛЬ
+                str(stock),       # 10. J: ОСТАТОК
+                '',               # 11. K: ПРИМЕЧАНИЕ
+                location,         # 12. L: ЛОКАЦИЯ
+                '',               # 13. M: ЦЕНА ЗАКУП
+                '',               # 14. N: ЦЕНА ОПТ
+                str(price_drom),  # 15. O: ЦЕНА ДРОМ
+                '',               # 16. P: СТАТУС ДРОМ
+                status_text,      # 17. Q: СТАТУС ПРОДАЖИ (было P, теперь Q)
+                ''                # 18. R: ДАТА ПРОДАЖИ (было Q, теперь R)
             ])
         
+        # Очищаем старые данные (оставляем только заголовки в строке 1)
         if sheet.row_count > 1:
             sheet.delete_rows(2, sheet.row_count)
         
+        # Добавляем актуальные данные
         if rows_to_add:
             sheet.append_rows(rows_to_add)
         
